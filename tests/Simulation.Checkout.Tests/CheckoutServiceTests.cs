@@ -1,3 +1,4 @@
+using Simulation.Checkout.Tests.TestData;
 using FluentAssertions;
 using Moq;
 using Simulation.Checkout.Application;
@@ -215,6 +216,42 @@ public sealed class CheckoutServiceTests
                 It.IsAny<CheckoutReceipt>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    // TASK 3.1 — AutoFixture
+    [Fact]
+    public async Task CheckoutAsync_WhenOrderIsGeneratedByAutoFixture_ShouldSucceed()
+    {
+        var order = OrderTestData.CreateValidOrder();
+
+        var (sut, _, _, _) = CreateSut();
+
+        var receipt = await sut.CheckoutAsync(order);
+
+        receipt.Items.Should().ContainSingle();
+        receipt.Subtotal.Should().Be(20m);
+    }
+
+    // TASK 3.2 — Bogus
+
+    [Fact]
+    public async Task CheckoutAsync_WhenCustomerIsGeneratedByBogus_ShouldPreserveCustomerDetails()
+    {
+        var customer = CustomerTestData.Create();
+
+        var order = new Order
+        {
+            CustomerName = customer.Name,
+            CustomerEmail = customer.Email,
+            Items = new[] { CreateItem(100m, 1) }
+        };
+
+        var (sut, _, _, _) = CreateSut();
+
+        var receipt = await sut.CheckoutAsync(order);
+
+        receipt.CustomerName.Should().Be(customer.Name);
+        receipt.CustomerEmail.Should().Be(customer.Email);
     }
 
     // Shared Test Helpers
