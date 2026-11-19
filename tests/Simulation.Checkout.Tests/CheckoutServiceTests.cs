@@ -127,6 +127,96 @@ public sealed class CheckoutServiceTests
         receipt.Total.Should().Be(expectedTotal);
     }
 
+    // TASK 2.1 — Successful Checkout With Mocks
+
+    [Fact]
+    public async Task CheckoutAsync_WhenOrderIsValid_ShouldSaveAndSendConfirmationOnce()
+    {
+        var (sut, repository, _, notification) = CreateSut();
+        var order = CreateOrder(CreateItem(500m, 2));
+
+        var receipt = await sut.CheckoutAsync(order);
+
+        receipt.Total.Should().Be(900m);
+
+        repository.Verify(
+            x => x.SaveAsync(
+                It.Is<Order>(saved => saved.Id == order.Id),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        notification.Verify(
+            x => x.SendOrderConfirmationAsync(
+                It.Is<CheckoutReceipt>(r => r.OrderId == order.Id),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    // TASK 2.2 — Insufficient Inventory
+
+    [Fact]
+    public async Task CheckoutAsync_WhenItemIsOutOfStock_ShouldNotSaveOrNotify()
+    {
+        var (sut, repository, inventory, notification) = CreateSut();
+        var order = CreateOrder(CreateItem(500m, 1));
+
+        inventory
+            .Setup(x => x.IsAvailableAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        Func<Task> act = () => sut.CheckoutAsync(order);
+
+        await act.Should()
+            .ThrowAsync<InsufficientInventoryException>();
+
+        repository.Verify(
+            x => x.SaveAsync(
+                It.IsAny<Order>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        notification.Verify(
+            x => x.SendOrderConfirmationAsync(
+                It.IsAny<CheckoutReceipt>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    // TASK 2.3 — Validation Failure
+
+    [Fact]
+    public async Task CheckoutAsync_WhenValidationFails_ShouldNotCallDependencies()
+    {
+        var (sut, repository, inventory, notification) = CreateSut();
+        var order = CreateOrder(CreateItem(500m, 0));
+
+        Func<Task> act = () => sut.CheckoutAsync(order);
+
+        await act.Should().ThrowAsync<InvalidQuantityException>();
+
+        inventory.Verify(
+            x => x.IsAvailableAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        repository.Verify(
+            x => x.SaveAsync(
+                It.IsAny<Order>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        notification.Verify(
+            x => x.SendOrderConfirmationAsync(
+                It.IsAny<CheckoutReceipt>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     // Shared Test Helpers
 
     private static Order CreateOrder(params OrderItem[] items)
